@@ -1,0 +1,36 @@
+Age	Heart Rate	Blood Pressure	SpO2	Emergency Type	Severity
+69	119	111	81	Trauma	High
+32	80	130	91	Trauma	Medium
+89	68	117	88	Cardiac	High
+78	110	176	98	Minor Injury	Medium
+38	157	102	77	Respiratory	High
+41	103	142	86	Cardiac	High
+20	88	94	87	Trauma	High
+39	140	176	76	Minor Injury	High
+70	123	104	77	Cardiac	High
+19	139	96	79	Respiratory	High
+47	68	176	85	Cardiac	High
+55	88	145	82	Respiratory	High
+19	116	157	97	Trauma	Medium
+81	94	132	97	Minor Injury	Low
+77	62	183	86	Minor Injury	High
+38	141	183	81	Minor Injury	High
+50	107	130	89	Trauma	High
+75	69	118	98	Respiratory	Low
+39	141	130	91	Trauma	High
+66	121	149	78	Minor Injury	High
+76	110	85	96	Trauma	Medium
+59	154	146	99	Trauma	High
+77	88	86	87	Trauma	High
+32	50	130	92	Respiratory	Medium
+79	52	151	75	Cardiac	High
+79	126	121	90	Cardiac	High
+64	141	143	87	Trauma	High
+79	111	94	84	Cardiac	High
+68	112	108	86	Cardiac	High
+72	74	112	76	Trauma	High
+53	81	141	98	Minor Injury	Medium
+62	72	120	98	Minor Injury	Low
+29	98	118	97	Minor Injury	Low
+41	145	182	89	Cardiac	High
+35	124	102	88	Trauma	High

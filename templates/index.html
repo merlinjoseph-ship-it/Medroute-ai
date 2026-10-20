@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency Route Dispatch - MedRoute AI</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet & Routing Machine Stylesheet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+
+    <style>
+        body {
+            background-color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .dispatch-header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: white;
+            padding: 35px 0;
+            border-bottom: 5px solid #dc3545;
+        }
+        .content-card {
+            border: none;
+            border-radius: 14px;
+            background: white;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+        }
+        .btn-dispatch {
+            background-color: #dc3545;
+            color: white;
+            padding: 13px 24px;
+            font-weight: 600;
+            border-radius: 8px;
+            border: none;
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.35);
+            transition: all 0.2s ease;
+        }
+        .btn-dispatch:hover {
+            background-color: #b02a37;
+            color: white;
+            transform: translateY(-1px);
+        }
+        .location-tab-btn {
+            border-radius: 8px;
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+        .search-results-list {
+            position: absolute;
+            z-index: 1050;
+            width: 100%;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+            max-height: 210px;
+            overflow-y: auto;
+            display: none;
+        }
+        .search-result-item {
+            padding: 9px 12px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .search-result-item:hover {
+            background-color: #fee2e2;
+            color: #dc3545;
+        }
+        #map { 
+            height: 480px; 
+            width: 100%; 
+            border-radius: 12px; 
+            border: 1px solid #e2e8f0;
+        }
+        .tracking-status-bar {
+            background: #fff1f2;
+            border: 1px solid #fecdd3;
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .leaflet-routing-container {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark py-3">
+        <div class="container">
+            <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="/">
+                <i class="fa-solid fa-truck-medical text-danger fs-3"></i>
+                <span>MedRoute AI</span>
+            </a>
+            <div class="d-flex align-items-center gap-3">
+                <span class="badge bg-danger px-3 py-2 rounded-pill d-none d-sm-inline">SDG 3: Good Health & Well-Being</span>
+                <a href="/" class="btn btn-outline-light btn-sm rounded-pill px-3">
+                    <i class="fa-solid fa-arrow-left me-1"></i> Home
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Header Banner -->
+    <header class="dispatch-header">
+        <div class="container text-center">
+            <h2 class="fw-bold mb-2">Emergency Dispatch & Real-Time Navigation</h2>
+            <p class="text-muted mb-0 lead fs-6">
+                Live GPS transit telemetry, automated road condition analysis, and ML urgency prediction.
+            </p>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="container py-4 flex-grow-1">
+        <div class="row g-4">
+            
+            <!-- Patient & Location Parameters -->
+            <div class="col-lg-5">
+                <div class="content-card p-4">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h5 class="fw-bold mb-0 text-dark">
+                            <i class="fa-solid fa-notes-medical text-danger me-2"></i>Patient & Origin
+                        </h5>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-danger location-tab-btn active" id="tabGps" onclick="setLocationMode('gps')">
+                                <i class="fa-solid fa-satellite-dish me-1"></i> Live GPS
+                            </button>
+                            <button type="button" class="btn btn-outline-danger location-tab-btn" id="tabManual" onclick="setLocationMode('manual')">
+                                <i class="fa-solid fa-magnifying-glass me-1"></i> Search
+                            </button>
+                        </div>
+                    </div>
+
+                    <form method="POST" action="/dispatch" id="dispatchForm">
+                        <!-- Location Coordinates Hidden Inputs -->
+                        <input type="hidden" name="user_lat" id="user_lat" value="{{ user_lat }}">
+                        <input type="hidden" name="user_lon" id="user_lon" value="{{ user_lon }}">
+                        <input type="hidden" name="location_name" id="location_name" value="{{ location_name }}">
+
+                        <!-- GPS Mode Notification Box -->
+                        <div id="gpsModeBox" class="mb-3 p-3 bg-light rounded border">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <span class="small text-muted"><i class="fa-solid fa-location-dot text-danger me-1"></i> Current Origin:</span>
+                                <span class="badge bg-secondary" id="gpsStatusBadge">Standby</span>
+                            </div>
+                            <div class="fw-bold small text-dark mt-1" id="gpsDisplayAddress">{{ location_name }}</div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary mt-2 w-100" onclick="acquireDeviceCoordinates()">
+                                <i class="fa-solid fa-crosshairs me-1"></i> Refresh Live Position
+                            </button>
+                        </div>
+
+                        <!-- Manual Location Search Box (Hidden by default) -->
+                        <div id="manualModeBox" class="mb-3 position-relative" style="display: none;">
+                            <label class="form-label fw-semibold small text-muted">Search Town / Landmark</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light text-muted"><i class="fa-solid fa-map-pin"></i></span>
+                                <input type="text" id="manualSearchInput" class="form-control" placeholder="e.g. Aluva, Thrissur Round, Kozhikode..." autocomplete="off">
+                            </div>
+                            <div id="searchResultsList" class="search-results-list"></div>
+                            <div class="form-text small text-muted mt-1">Select a suggestion to update origin coordinates.</div>
+                        </div>
+
+                        <!-- Road & Traffic Condition Selector -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold small text-muted">Road & Traffic Conditions</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light text-muted"><i class="fa-solid fa-traffic-light"></i></span>
+                                <select name="road_condition" class="form-select" id="roadConditionSelect">
+                                    <option value="Normal" selected>Normal Traffic / Dry Road (1.0x)</option>
+                                    <option value="Optimal">Clear Highway / High-Speed Transit (0.85x)</option>
+                                    <option value="Moderate">Moderate Congestion / Curves (1.25x)</option>
+                                    <option value="Heavy">Heavy Traffic / Monsoon Rain (1.55x)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Patient Vitals Entry -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold small text-muted">Patient Age</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light text-muted"><i class="fa-solid fa-user"></i></span>
+                                <input type="number" step="any" name="age" class="form-control" placeholder="e.g. 52" required>
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label fw-semibold small text-muted">Heart Rate (BPM)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-muted"><i class="fa-solid fa-heart-pulse"></i></span>
+                                    <input type="number" step="any" name="heart_rate" class="form-control" placeholder="85" required>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-semibold small text-muted">Blood Pressure (SYS)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-muted"><i class="fa-solid fa-droplet"></i></span>
+                                    <input type="number" step="any" name="blood_pressure" class="form-control" placeholder="130" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold small text-muted">SpO2 Percentage (%)</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light text-muted"><i class="fa-solid fa-lungs"></i></span>
+                                <input type="number" step="any" name="spo2" class="form-control" placeholder="95" required>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold small text-muted">Emergency Category</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light text-muted"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                                <select name="emergency_type" class="form-select">
+                                    {% for et in emergency_types %}
+                                        <option value="{{ et }}">{{ et }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-dispatch w-100 py-3" id="btnSubmit">
+                            <i class="fa-solid fa-route me-2"></i> Compute Triage, Nearest Hospital & Route
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Route Map & Dispatch Report -->
+            <div class="col-lg-7">
+                {% if details %}
+                <div class="content-card p-4">
+                    <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
+                        <div>
+                            <span class="badge {% if prediction == 'High' %}bg-danger{% elif prediction == 'Medium' %}bg-warning text-dark{% else %}bg-success{% endif %} px-3 py-2 rounded-pill fw-semibold">
+                                {{ prediction }} Severity Priority
+                            </span>
+                            <h4 class="fw-bold mt-2 mb-0 text-dark">{{ hospital }}</h4>
+                            <div class="small text-muted mt-1">
+                                <i class="fa-solid fa-road me-1"></i> Condition: <strong>{{ details.condition }}</strong>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <span class="fs-4 fw-bold text-danger">{{ details.distance }} km</span>
+                            <div class="small fw-semibold text-dark">
+                                <i class="fa-solid fa-clock text-danger me-1"></i> <span id="liveEtaText">{{ details.eta }}</span> min ETA
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Transit Tracking Bar -->
+                    <div class="tracking-status-bar mb-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="spinner-grow spinner-grow-sm text-danger" role="status"></span>
+                            <div>
+                                <span class="fw-bold text-danger">Live GPS Tracking Active</span>
+                                <div class="small text-muted" id="trackingDetails">Monitoring speed & transit path...</div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="recenterMap()">
+                            <i class="fa-solid fa-location-crosshairs"></i> Recenter
+                        </button>
+                    </div>
+
+                    <div class="row g-2 text-center mb-3">
+                        <div class="col-4">
+                            <div class="p-2 border rounded bg-light">
+                                <div class="text-muted small fw-semibold">ICU Beds</div>
+                                <div class="fs-5 fw-bold text-dark">{{ details.icu }}</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-2 border rounded bg-light">
+                                <div class="text-muted small fw-semibold">Emergency Beds</div>
+                                <div class="fs-5 fw-bold text-dark">{{ details.emergency_beds }}</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-2 border rounded bg-light">
+                                <div class="text-muted small fw-semibold">Trauma Center</div>
+                                <div class="fs-5 fw-bold {% if details.trauma == 'Yes' %}text-danger{% else %}text-muted{% endif %}">
+                                    {{ details.trauma }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="map"></div>
+                </div>
+                {% else %}
+                <div class="content-card p-5 text-center h-100 d-flex flex-column justify-content-center align-items-center">
+                    <div class="text-danger opacity-50 mb-3 fs-1">
+                        <i class="fa-solid fa-map-location-dot"></i>
+                    </div>
+                    <h5 class="fw-bold text-dark">Emergency Transit Telemetry Standby</h5>
+                    <p class="text-muted small max-w-75 mb-0">
+                        Choose your location via GPS or Manual Search, submit the patient vitals, and the system will compute hospital triage along with live turn-by-turn road navigation.
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+
+    <div id="app-data"
+         data-user-lat="{{ user_lat if user_lat is defined else 10.5276 }}"
+         data-user-lon="{{ user_lon if user_lon is defined else 76.2144 }}"
+         data-location-name="{{ location_name if location_name is defined else 'Default Coordinates (Thrissur)' }}"
+         data-details-available="{{ 'true' if details else 'false' }}"
+         data-hospital-name="{{ hospital if hospital else '' }}"
+         data-hospital-lat="{{ details.lat if details else '' }}"
+         data-hospital-lon="{{ details.lon if details else '' }}"
+         data-hospital-condition="{{ details.condition if details else '' }}"
+         data-eta="{{ details.eta if details else '' }}"
+         style="display:none;"></div>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-white text-center py-4 mt-auto">
+        <div class="container">
+            <p class="mb-0 text-muted small">Introduction to Data Science (25ADZ304) · PBL Project · AI & DS Department</p>
+        </div>
+    </footer>
+
+    <!-- Leaflet & Routing Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+
+    <script>
+        let currentMode = 'gps';
+        let routingControl = null;
+        let map = null;
+        let userMarker = null;
+        let hospitalMarker = null;
+
+        const dataEl = document.getElementById('app-data');
+        const hasDetails = dataEl.dataset.detailsAvailable === 'true';
+
+        // Toggle GPS vs Manual Search
+        function setLocationMode(mode) {
+            currentMode = mode;
+            if (mode === 'gps') {
+                document.getElementById('gpsModeBox').style.display = 'block';
+                document.getElementById('manualModeBox').style.display = 'none';
+                document.getElementById('tabGps').classList.add('active', 'btn-danger');
+                document.getElementById('tabGps').classList.remove('btn-outline-danger');
+                document.getElementById('tabManual').classList.remove('active', 'btn-danger');
+                document.getElementById('tabManual').classList.add('btn-outline-danger');
+            } else {
+                document.getElementById('gpsModeBox').style.display = 'none';
+                document.getElementById('manualModeBox').style.display = 'block';
+                document.getElementById('tabManual').classList.add('active', 'btn-danger');
+                document.getElementById('tabManual').classList.remove('btn-outline-danger');
+                document.getElementById('tabGps').classList.remove('active', 'btn-danger');
+                document.getElementById('tabGps').classList.add('btn-outline-danger');
+            }
+        }
+
+        // Live Geolocation Acquisition
+        function acquireDeviceCoordinates() {
+            const badge = document.getElementById('gpsStatusBadge');
+            badge.className = "badge bg-warning text-dark";
+            badge.innerText = "Locking GPS...";
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        const lat = pos.coords.latitude;
+                        const lon = pos.coords.longitude;
+                        document.getElementById('user_lat').value = lat;
+                        document.getElementById('user_lon').value = lon;
+                        document.getElementById('location_name').value = `Live GPS (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+                        document.getElementById('gpsDisplayAddress').innerText = `Live GPS (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+                        badge.className = "badge bg-success";
+                        badge.innerText = "GPS Fixed";
+                    },
+                    (err) => {
+                        badge.className = "badge bg-danger";
+                        badge.innerText = "Denied / Timeout";
+                        alert("Could not access live GPS. You can switch to the 'Search' tab to enter your location manually.");
+                    },
+                    { enableHighAccuracy: true, timeout: 8000 }
+                );
+            } else {
+                badge.className = "badge bg-danger";
+                badge.innerText = "Unsupported";
+            }
+        }
+
+        // Location Autocomplete Search
+        const searchInput = document.getElementById('manualSearchInput');
+        const resultsList = document.getElementById('searchResultsList');
+        let searchTimer = null;
+
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                const query = this.value.trim();
+                clearTimeout(searchTimer);
+                if (query.length < 2) {
+                    resultsList.style.display = 'none';
+                    return;
+                }
+
+                searchTimer = setTimeout(() => {
+                    fetch(`/api/search_location?q=${encodeURIComponent(query)}`)
+                        .then(res => res.json())
+                        .then(items => {
+                            resultsList.innerHTML = '';
+                            if (items.length === 0) {
+                                resultsList.innerHTML = '<div class="search-result-item text-muted">No locations found</div>';
+                            } else {
+                                items.forEach(item => {
+                                    const div = document.createElement('div');
+                                    div.className = 'search-result-item';
+                                    div.innerHTML = `<i class="fa-solid fa-location-dot text-danger me-2"></i>${item.display_name}`;
+                                    div.onclick = function() {
+                                        document.getElementById('user_lat').value = item.lat;
+                                        document.getElementById('user_lon').value = item.lon;
+                                        document.getElementById('location_name').value = item.display_name.split(',')[0];
+                                        searchInput.value = item.display_name.split(',')[0];
+                                        resultsList.style.display = 'none';
+                                    };
+                                    resultsList.appendChild(div);
+                                });
+                            }
+                            resultsList.style.display = 'block';
+                        })
+                        .catch(err => {
+                            console.error("Geocoding lookup error", err);
+                        });
+                }, 300);
+            });
+        }
+
+        // Map & Live In-Transit Telemetry
+        if (hasDetails) {
+            const uLat = parseFloat(dataEl.dataset.userLat);
+            const uLon = parseFloat(dataEl.dataset.userLon);
+            const hLat = parseFloat(dataEl.dataset.hospitalLat);
+            const hLon = parseFloat(dataEl.dataset.hospitalLon);
+            const baseCondition = dataEl.dataset.hospitalCondition;
+            const hospitalName = dataEl.dataset.hospitalName;
+
+            map = L.map('map', { zoomControl: false }).setView([uLat, uLon], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Ambulance Icon
+            const ambulanceIcon = L.divIcon({
+                className: 'live-ambulance-marker',
+                html: '<div style="background:#dc3545; color:white; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:3px solid white; box-shadow:0 0 14px rgba(220,53,69,0.7);"><i class="fa-solid fa-truck-medical fs-6"></i></div>',
+                iconSize: [34, 34],
+                iconAnchor: [17, 17]
+            });
+
+            const hospitalIcon = L.divIcon({
+                className: 'dest-hospital-marker',
+                html: '<div style="background:#0f172a; color:white; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:3px solid white; box-shadow:0 0 10px rgba(0,0,0,0.3);"><i class="fa-solid fa-hospital fs-6"></i></div>',
+                iconSize: [34, 34],
+                iconAnchor: [17, 17]
+            });
+
+            // Initialize Road Routing
+            routingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(uLat, uLon),
+                    L.latLng(hLat, hLon)
+                ],
+                createMarker: function(i, wp) {
+                    if (i === 0) {
+                        userMarker = L.marker(wp.latLng, { icon: ambulanceIcon }).bindPopup("<b>Incident / Current Location</b>");
+                        return userMarker;
+                    } else {
+                        hospitalMarker = L.marker(wp.latLng, { icon: hospitalIcon }).bindPopup(`<b>${hospitalName}</b>`);
+                        return hospitalMarker;
+                    }
+                },
+                routeWhileDragging: false,
+                addWaypoints: false,
+                show: false,
+                lineOptions: {
+                    styles: [{ color: '#dc3545', weight: 6, opacity: 0.85 }]
+                }
+            }).addTo(map);
+
+            // Live GPS In-Transit Stream via watchPosition
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (pos) => {
+                        const newLat = pos.coords.latitude;
+                        const newLon = pos.coords.longitude;
+                        const speedKmh = pos.coords.speed ? (pos.coords.speed * 3.6).toFixed(1) : "En route";
+
+                        if (routingControl) {
+                            routingControl.setWaypoints([
+                                L.latLng(newLat, newLon),
+                                L.latLng(hLat, hLon)
+                            ]);
+                        }
+
+                        document.getElementById('trackingDetails').innerText = 
+                            `Current Speed: ${speedKmh} km/h | Coordinates: ${newLat.toFixed(4)}, ${newLon.toFixed(4)}`;
+                    },
+                    () => {
+                        document.getElementById('trackingDetails').innerText = "Live tracking idle (GPS lock retained).";
+                    },
+                    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+                );
+            }
+
+            function recenterMap() {
+                if (map) {
+                    map.setView([uLat, uLon], 14);
+                }
+            }
+        }
+
+        // Auto-run GPS acquisition on initial load
+        window.addEventListener('DOMContentLoaded', () => {
+            if (navigator.geolocation && currentMode === 'gps') {
+                acquireDeviceCoordinates();
+            }
+        });
+    </script>
+</body>
+</html>
